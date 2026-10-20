@@ -1,0 +1,21 @@
+diff --git a/hardware/src/ara_dispatcher.sv b/hardware/src/ara_dispatcher.sv
+index e5f9e06..48a8a02 100644
+--- a/hardware/src/ara_dispatcher.sv
++++ b/hardware/src/ara_dispatcher.sv
+@@ -1540,6 +1540,16 @@ module ara_dispatcher import ara_pkg::*; import rvv_pkg::*; #(
+                       acc_resp_o.exception  = ara_resp.exception;
+                       ara_req_valid       = 1'b0;
+                     end
++
++                    // With vl == 0, vcpop.m writes 0 and vfirst.m writes -1 to rd without reading
++                    // vs2. The mask unit never answers a vl == 0 request, so answer here instead
++                    // of dispatching it (vmv.x.s ignores vl and is dispatched with vl = 1).
++                    if (ara_req.op inside {VCPOP, VFIRST} && csr_vl_q == '0) begin
++                      acc_resp_o.req_ready  = 1'b1;
++                      acc_resp_o.resp_valid = 1'b1;
++                      acc_resp_o.result     = (ara_req.op == VFIRST) ? '1 : '0;
++                      ara_req_valid         = 1'b0;
++                    end
+                   end
+                   6'b010100: begin
+                     // VMSBF, -OF, -IF, require bit-level masking

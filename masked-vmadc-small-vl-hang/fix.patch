@@ -1,0 +1,17 @@
+diff --git a/hardware/src/masku/masku.sv b/hardware/src/masku/masku.sv
+index d2fdccd..9559032 100644
+--- a/hardware/src/masku/masku.sv
++++ b/hardware/src/masku/masku.sv
+@@ -1028,8 +1028,10 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+           mask_queue_valid_d[mask_queue_write_pnt_q] = {NrLanes{1'b1}};
+ 
+           // Are there lanes with no valid elements?
+-          // If so, mute their request signal
+-          if (read_cnt_q < NrLanes)
++          // If so, mute their request signal. Not for vmadc/vmsbc: their lanes compute a balanced
++          // payload for the MASKU (every lane gets at least one element) and each lane waits for
++          // its carry-in bits, so muting left lanes >= vl waiting forever when vl < NrLanes.
++          if (read_cnt_q < NrLanes && !(vinsn_issue.op inside {[VMADC:VMSBC]}))
+             mask_queue_valid_d[mask_queue_write_pnt_q] = (1 << read_cnt_q) - 1;
+ 
+           // Consumed all valid bytes from the lane operands

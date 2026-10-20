@@ -1,0 +1,13 @@
+Set `ram TOP.ara_tb_verilator.dut.i_ara_soc.i_dram 10 0x80000000 0x100000 write with offset: 0x0 write with size: 0x14c0
+Simulation of Ara
+=================
+
+
+Simulation running, end by pressing CTRL-c.
+Simulation timeout of 2dc6c0 cycles reached, shutting down simulation.
+
+Simulation statistics
+=====================
+Executed cycles:  2dc6c0
+Wallclock time:   258.996 s
+Simulation speed: 11583.2 cycles/s (11.5832 kHz)

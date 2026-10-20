@@ -1,0 +1,17 @@
+diff --git a/hardware/src/sldu/sldu.sv b/hardware/src/sldu/sldu.sv
+index f582cdf..3873f71 100644
+--- a/hardware/src/sldu/sldu.sv
++++ b/hardware/src/sldu/sldu.sv
+@@ -526,8 +526,11 @@ module sldu import ara_pkg::*; import rvv_pkg::*; #(
+           automatic int byte_count = in_byte_count < out_byte_count ? in_byte_count : out_byte_count;
+ 
+           // Build the sequential byte-output-enable
++          // output_limit_q counts bytes from the start of vd: compare it with the byte's position in
++          // the register group, not in the current VRF word (else the tail of the last word is written)
+           for (int unsigned b = 0; b < 8*NrLanes; b++)
+-            if ((b >= out_pnt_q && b < output_limit_q) || vinsn_issue_q.vfu inside {VFU_Alu, VFU_MFpu})
++            if ((b >= out_pnt_q && (32'(vrf_pnt_q) * 8 * NrLanes + b < 32'(output_limit_q))) ||
++                vinsn_issue_q.vfu inside {VFU_Alu, VFU_MFpu})
+               out_en_seq[b] = 1'b1;
+ 
+           // Shuffle the output enable

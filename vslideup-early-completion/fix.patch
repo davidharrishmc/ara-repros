@@ -1,0 +1,28 @@
+diff --git a/hardware/src/sldu/sldu.sv b/hardware/src/sldu/sldu.sv
+index f582cdf..20ae510 100644
+--- a/hardware/src/sldu/sldu.sv
++++ b/hardware/src/sldu/sldu.sv
+@@ -840,7 +840,9 @@ module sldu import ara_pkg::*; import rvv_pkg::*; #(
+         // Trim vector elements which are not written by the slide unit
+         if (vinsn_queue_q.vinsn[vinsn_queue_d.commit_pnt].op == VSLIDEUP &&
+             !vinsn_queue_q.vinsn[vinsn_queue_d.commit_pnt].use_scalar_op)
+-          commit_cnt_d -= vinsn_queue_q.vinsn[vinsn_queue_d.commit_pnt].stride[$bits(commit_cnt_d)-1:0];
++          // Only whole VRF words below the offset are skipped: the word holding the offset is written
++          commit_cnt_d -= vinsn_queue_q.vinsn[vinsn_queue_d.commit_pnt].stride[$bits(commit_cnt_d)-1:0] &
++                          ~($bits(commit_cnt_d))'(NrLanes * 8 - 1);
+       end
+     end
+ 
+@@ -868,7 +870,11 @@ module sldu import ara_pkg::*; import rvv_pkg::*; #(
+         // Trim vector elements which are not written by the slide unit
+         // VSLIDE1UP always writes at least 1 element
+         if (pe_req_i.op == VSLIDEUP && !pe_req_i.use_scalar_op) begin
+-          commit_cnt_d -= vinsn_queue_d.vinsn[vinsn_queue_q.accept_pnt].stride[$bits(commit_cnt_d)-1:0];
++          // Only whole VRF words below the offset are skipped: the word holding the offset is written,
++          // so subtracting the full offset reported the slide done one word early (a chained reader
++          // then lost its hazard and read the last word stale)
++          commit_cnt_d -= vinsn_queue_d.vinsn[vinsn_queue_q.accept_pnt].stride[$bits(commit_cnt_d)-1:0] &
++                          ~($bits(commit_cnt_d))'(NrLanes * 8 - 1);
+         end
+       end
+ 

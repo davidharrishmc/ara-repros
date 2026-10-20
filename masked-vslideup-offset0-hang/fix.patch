@@ -1,0 +1,23 @@
+diff --git a/hardware/src/lane/lane_sequencer.sv b/hardware/src/lane/lane_sequencer.sv
+index a9fa44e..78473e9 100644
+--- a/hardware/src/lane/lane_sequencer.sv
++++ b/hardware/src/lane/lane_sequencer.sv
+@@ -718,11 +718,16 @@ module lane_sequencer import ara_pkg::*; import rvv_pkg::*; import cf_math_pkg::
+             VSLIDEUP: begin
+               // We need to trim full words from the end of the vector that are not used
+               // as operands by the slide unit.
+-              operand_request[MaskM].vl = (pe_req.vl - pe_req.stride) / NrLanes / ELEN;
++              // vslideup uses the mask bits of elements [stride, vl), vslide1up those of [0, vl)
++              automatic logic [$bits(pe_req.vl)-1:0] mask_elems;
++              mask_elems = pe_req.use_scalar_op ? pe_req.vl : pe_req.vl - pe_req.stride;
++              operand_request[MaskM].vl = mask_elems / NrLanes / ELEN;
+ 
+               // Since this request goes outside of the lane, we might need to request an
+               // extra operand regardless of whether it is valid in this lane or not.
+-              if ((operand_request[MaskM].vl) * NrLanes * ELEN != + pe_req.stride)
++              // Round mask_elems up (comparing with the stride requested no mask word for a
++              // vslideup by 0 with vl < NrLanes * ELEN, and the SLDU waited for it forever)
++              if ((operand_request[MaskM].vl) * NrLanes * ELEN != mask_elems)
+                 operand_request[MaskM].vl += 1;
+ 
+               // SLIDEUP only uses mask bits whose indices are > stride

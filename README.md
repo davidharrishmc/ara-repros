@@ -29,3 +29,10 @@ after the trapping instruction.
 | [vrgather-vi-uimm](vrgather-vi-uimm/) | [pulp-platform/ara#526](https://github.com/pulp-platform/ara/issues/526) |
 | [vslidedown-past-vlmax](vslidedown-past-vlmax/) | [pulp-platform/ara#533](https://github.com/pulp-platform/ara/issues/533) |
 | [widening-snan-nv](widening-snan-nv/) | [pulp-platform/ara#524](https://github.com/pulp-platform/ara/issues/524) |
+| [masked-vmadc-small-vl-hang](masked-vmadc-small-vl-hang/) | [pulp-platform/ara#495](https://github.com/pulp-platform/ara/issues/495) |
+| [masked-vslideup-offset0-hang](masked-vslideup-offset0-hang/) | [pulp-platform/ara#495](https://github.com/pulp-platform/ara/issues/495) |
+| [vslide1up-past-vl](vslide1up-past-vl/) | [pulp-platform/ara#508](https://github.com/pulp-platform/ara/issues/508) |
+| [vcpop-vfirst-vl0](vcpop-vfirst-vl0/) | [pulp-platform/ara#510](https://github.com/pulp-platform/ara/issues/510) |
+| [sldu-tail-byte-enable](sldu-tail-byte-enable/) | [pulp-platform/ara#497](https://github.com/pulp-platform/ara/issues/497) |
+| [vslideup-early-completion](vslideup-early-completion/) | [pulp-platform/ara#497](https://github.com/pulp-platform/ara/issues/497) |
+| [shift-imm-e64](shift-imm-e64/) | [pulp-platform/ara#519](https://github.com/pulp-platform/ara/issues/519) |
