@@ -1,0 +1,19 @@
+diff --git a/core/acc_dispatcher.sv b/core/acc_dispatcher.sv
+index aa526951e..56cd23f34 100644
+--- a/core/acc_dispatcher.sv
++++ b/core/acc_dispatcher.sv
+@@ -338,7 +338,13 @@ module acc_dispatcher
+ 
+   // Set on store barrier. Clear when no store is pending.
+   assign wait_acc_store_d = (wait_acc_store_q | commit_st_barrier_i) & acc_resp_i.acc_resp.store_pending;
+-  assign ctrl_halt_o = wait_acc_store_q;
++  // A CSR instruction that reads or writes fflags/fcsr must see the flags of every earlier
++  // accelerator instruction, which the accelerator may report after they committed: hold its
++  // commit while the accelerator says flags may still arrive.
++  logic fcsr_csr_at_commit;
++  assign fcsr_csr_at_commit = commit_instr_i[0].valid && (commit_instr_i[0].fu == CSR) &&
++                              (csr_addr_i inside {12'h001, 12'h003});
++  assign ctrl_halt_o = wait_acc_store_q || (fcsr_csr_at_commit && acc_resp_i.acc_resp.fflags_pending);
+ 
+   /**************************
+    *  Load/Store tracking   *

@@ -1,0 +1,84 @@
+diff --git a/hardware/src/ara_dispatcher.sv b/hardware/src/ara_dispatcher.sv
+index e5f9e06..c94ba59 100644
+--- a/hardware/src/ara_dispatcher.sv
++++ b/hardware/src/ara_dispatcher.sv
+@@ -265,6 +265,21 @@ module ara_dispatcher import ara_pkg::*; import rvv_pkg::*; #(
+   `FF(load_complete_q, load_complete || illegal_insn_load, 1'b0)
+   `FF(store_complete_q, store_complete || illegal_insn_store, 1'b0)
+ 
++  // VLMAX for the current vtype (vslidedown offset clamp)
++  logic [31:0] vlmax_cur;
++  always_comb begin
++    vlmax_cur = VLENB >> csr_vtype_q.vsew;
++    unique case (csr_vtype_q.vlmul)
++      LMUL_2  : vlmax_cur <<= 1;
++      LMUL_4  : vlmax_cur <<= 2;
++      LMUL_8  : vlmax_cur <<= 3;
++      LMUL_1_2: vlmax_cur >>= 1;
++      LMUL_1_4: vlmax_cur >>= 2;
++      LMUL_1_8: vlmax_cur >>= 3;
++      default:;
++    endcase
++  end
++
+   // NP2 Slide support
+   logic is_stride_np2;
+   logic [idx_width(idx_width(VLENB << 3)):0] sldu_popc;
+@@ -994,7 +1009,9 @@ module ara_dispatcher import ara_pkg::*; import rvv_pkg::*; #(
+                   end
+                   6'b001111: begin
+                     ara_req.op            = ara_pkg::VSLIDEDOWN;
+-                    ara_req.stride        = acc_req_i.rs1;
++                    // An OFFSET >= VLMAX slides in only zeros: clamp it to VLMAX so that the
++                    // backend's byte offset (stride << vsew) can neither wrap nor overflow.
++                    ara_req.stride        = (acc_req_i.rs1 >= vlmax_cur) ? elen_t'(vlmax_cur) : acc_req_i.rs1;
+                     ara_req.eew_vs2       = csr_vtype_q.vsew;
+                     // Encode vslidedown/vslide1down on the use_scalar_op field
+                     ara_req.use_scalar_op = 1'b0;
+diff --git a/hardware/src/sldu/sldu.sv b/hardware/src/sldu/sldu.sv
+index f582cdf..54c1b76 100644
+--- a/hardware/src/sldu/sldu.sv
++++ b/hardware/src/sldu/sldu.sv
+@@ -368,6 +368,7 @@ module sldu import ara_pkg::*; import rvv_pkg::*; #(
+   logic   [idx_width(NrLanes*StrbWidth):0] in_pnt_d, in_pnt_q;
+   logic   [idx_width(NrLanes*StrbWidth):0] out_pnt_d, out_pnt_q;
+   vaddr_t                                  vrf_pnt_d, vrf_pnt_q;
++  logic [8*NrLanes-1:0]                    sld_zero_flat;
+ 
+   // Remaining bytes of the current instruction in the issue phase
+   vlen_t issue_cnt_d, issue_cnt_q;
+@@ -537,11 +538,33 @@ module sldu import ara_pkg::*; import rvv_pkg::*; #(
+           // Mask the output enable with the mask vector
+           out_en = out_en_flat & ({8*NrLanes{vinsn_issue_q.vm | (vinsn_issue_q.vfu inside {VFU_Alu, VFU_MFpu})}} | mask_q);
+ 
++          // vslidedown: destination elements whose source index (i + OFFSET) is >= VLMAX read 0,
++          // not whatever the VRF holds past the vs2 register group.
++          sld_zero_flat = '0;
++          // Reshuffles are slides by 0 (with the current vtype.vlmul, not their own LMUL_1), and a
++          // slide by 0 never reads past VLMAX.
++          if (vinsn_issue_q.op == VSLIDEDOWN && vinsn_issue_q.vfu == VFU_SlideUnit && vinsn_issue_q.stride != '0) begin
++            automatic logic [31:0] vlmax_bytes = VLEN / 8;
++            unique case (vinsn_issue_q.vtype.vlmul)
++              LMUL_2  : vlmax_bytes <<= 1;
++              LMUL_4  : vlmax_bytes <<= 2;
++              LMUL_8  : vlmax_bytes <<= 3;
++              LMUL_1_2: vlmax_bytes >>= 1;
++              LMUL_1_4: vlmax_bytes >>= 2;
++              LMUL_1_8: vlmax_bytes >>= 3;
++              default:;
++            endcase
++            for (int unsigned b = 0; b < 8*NrLanes; b++)
++              if (32'(vrf_pnt_q) * 8 * NrLanes + b + 32'(vinsn_issue_q.stride) >= vlmax_bytes)
++                sld_zero_flat[shuffle_index(b, NrLanes, vinsn_issue_q.vtype.vsew)] = 1'b1;
++          end
++
+           // Write in the correct bytes
+           for (int lane = 0; lane < NrLanes; lane++)
+             for (int b = 0; b < 8; b++)
+               if (out_en[lane][b]) begin
+-                result_queue_d[result_queue_write_pnt_q][lane].wdata[8*b +: 8] = sld_op_dst[lane][8*b +: 8];
++                result_queue_d[result_queue_write_pnt_q][lane].wdata[8*b +: 8] =
++                  sld_zero_flat[lane*8 + b] ? 8'b0 : sld_op_dst[lane][8*b +: 8];
+                 result_queue_d[result_queue_write_pnt_q][lane].be[b]           = 1'b1;
+               end
+ 

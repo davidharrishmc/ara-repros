@@ -1,0 +1,79 @@
+diff --git a/hardware/src/lane/operand_queue.sv b/hardware/src/lane/operand_queue.sv
+index 48bab2e..342c864 100644
+--- a/hardware/src/lane/operand_queue.sv
++++ b/hardware/src/lane/operand_queue.sv
+@@ -275,6 +275,8 @@ module operand_queue import ara_pkg::*; import rvv_pkg::*; import cf_math_pkg::i
+             endcase
+           end
+           MFPU_ADDRGEN: begin
++            // FP min/max reductions: the canonical quiet NaN is the neutral value (min(x, qNaN) = x,
++            // also when x is a NaN)
+             unique case (cmd.eew)
+               EW8: if (RVVB(FPUSupport) || RVVBA(FPUSupport)) begin
+                 unique case (cmd.ntr_red)
+@@ -285,23 +287,20 @@ module operand_queue import ara_pkg::*; import rvv_pkg::*; import cf_math_pkg::i
+               end
+               EW16: begin
+                 unique case (cmd.ntr_red)
+-                  2'b01: ntr.w64 = {4{16'h7c00}};
+-                  2'b10: ntr.w64 = {4{16'hfc00}};
++                  2'b01, 2'b10: ntr.w64 = {4{16'h7e00}};
+                   default:;
+                 endcase
+               end
+               EW32: begin
+                 unique case (cmd.ntr_red)
+-                  2'b01: ntr.w64 = {2{32'h7f800000}};
+-                  2'b10: ntr.w64 = {2{32'hff800000}};
++                  2'b01, 2'b10: ntr.w64 = {2{32'h7fc00000}};
+                   default:;
+                 endcase
+               end
+               // Add EW64 for convenience of coding
+               default: begin
+                 unique case (cmd.ntr_red)
+-                  2'b01: ntr.w64 = {1{64'h7ff0000000000000}};
+-                  2'b10: ntr.w64 = {1{64'hfff0000000000000}};
++                  2'b01, 2'b10: ntr.w64 = {1{64'h7ff8000000000000}};
+                   default:;
+                 endcase
+               end
+diff --git a/hardware/src/lane/vmfpu.sv b/hardware/src/lane/vmfpu.sv
+index 744dfc6..28d3d98 100644
+--- a/hardware/src/lane/vmfpu.sv
++++ b/hardware/src/lane/vmfpu.sv
+@@ -1006,25 +1006,26 @@ module vmfpu import ara_pkg::*; import rvv_pkg::*; import fpnew_pkg::*;
+         VFREDMIN: begin
+           fp_op = MINMAX;
+           fp_rm = RNE;
+-          // positive infinity
++          // Canonical quiet NaN: min(x, qNaN) = x for every x, also when x is a NaN (an all-NaN
++          // reduction gives the canonical NaN, not an infinity)
+           case (vinsn_issue_q.vtype.vsew)
+             EW8: if (RVVB(FPUSupport) || RVVBA(FPUSupport)) ntr_val = {8{8'h78}};
+-            EW16: ntr_val = {4{16'h7c00}};
+-            EW32: ntr_val = {2{32'h7f800000}};
++            EW16: ntr_val = {4{16'h7e00}};
++            EW32: ntr_val = {2{32'h7fc00000}};
+             default: // EW64
+-              ntr_val = 64'h7ff0000000000000;
++              ntr_val = 64'h7ff8000000000000;
+           endcase
+         end
+         VFREDMAX: begin
+           fp_op = MINMAX;
+           fp_rm = RTZ;
+-          // negative infinity
++          // Canonical quiet NaN (see VFREDMIN)
+           case (vinsn_issue_q.vtype.vsew)
+             EW8: if (RVVB(FPUSupport) || RVVBA(FPUSupport)) ntr_val = {8{8'hf8}};
+-            EW16: ntr_val = {4{16'hfc00}};
+-            EW32: ntr_val = {2{32'hff800000}};
++            EW16: ntr_val = {4{16'h7e00}};
++            EW32: ntr_val = {2{32'h7fc00000}};
+             default: // EW64
+-              ntr_val = 64'hfff0000000000000;
++              ntr_val = 64'h7ff8000000000000;
+           endcase
+         end
+         default:;

@@ -1,0 +1,13 @@
+diff --git a/hardware/src/ara_dispatcher.sv b/hardware/src/ara_dispatcher.sv
+index e5f9e06..0ba64ce 100644
+--- a/hardware/src/ara_dispatcher.sv
++++ b/hardware/src/ara_dispatcher.sv
+@@ -1584,6 +1584,8 @@ module ara_dispatcher import ara_pkg::*; import rvv_pkg::*; #(
+                   6'b001011: ara_req.op = ara_pkg::VASUB;
+                   6'b010111: begin
+                     ara_req.op = ara_pkg::VCOMPRESS;
++                    // vs1 is a single mask register whatever LMUL is: it need not be a multiple of LMUL
++                    lmul_vs1 = LMUL_1;
+                     // Correctly deshuffle vs1 (it gets deshuffled with eew_vs2)
+                     ara_req.eew_vs2 = eew_q[ara_req.vs1];
+                     // The MASKU will ask for elements from vs2 through the MaskB opqueue

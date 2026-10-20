@@ -1,0 +1,179 @@
+diff --git a/hardware/src/lane/vmfpu.sv b/hardware/src/lane/vmfpu.sv
+index 744dfc6..7823cb8 100644
+--- a/hardware/src/lane/vmfpu.sv
++++ b/hardware/src/lane/vmfpu.sv
+@@ -2275,10 +2275,9 @@ module vmfpu import ara_pkg::*; import rvv_pkg::*; import fpnew_pkg::*;
+     if (!vinsn_queue_full && vfu_operation_valid_i &&
+       (vfu_operation_i.vfu == VFU_MFpu || vfu_operation_i.op inside {[VMFEQ:VMFGE]})) begin
+       vinsn_queue_d.vinsn[vinsn_queue_q.accept_pnt]    = vfu_operation_i;
+-      // Masks are handled in the MASKU directly for comparisons
+-      vinsn_queue_d.vinsn[vinsn_queue_q.accept_pnt].vm = vfu_operation_i.op inside {[VMFEQ:VMFGE]}
+-                                                       ? 1'b1
+-                                                       : vfu_operation_i.vm;
++      // The MASKU masks the comparison result bits, but the FPU must not evaluate inactive
++      // elements either (a NaN there raised NV): keep vm, the MASKU also sends the mask here
++      vinsn_queue_d.vinsn[vinsn_queue_q.accept_pnt].vm = vfu_operation_i.vm;
+       // During comparisons, vd_op is for the masku, not for the VMFPU
+       vinsn_queue_d.vinsn[vinsn_queue_q.accept_pnt].use_vd_op = vfu_operation_i.op inside {[VMFEQ:VMFGE]}
+                                                               ? 1'b0
+diff --git a/hardware/src/masku/masku.sv b/hardware/src/masku/masku.sv
+index d2fdccd..72ab977 100644
+--- a/hardware/src/masku/masku.sv
++++ b/hardware/src/masku/masku.sv
+@@ -291,6 +291,9 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+   // Mask queue
+   strb_t [MaskQueueDepth-1:0][NrLanes-1:0] mask_queue_d, mask_queue_q;
+   logic  [MaskQueueDepth-1:0][NrLanes-1:0] mask_queue_valid_d, mask_queue_valid_q;
++  // The entry feeds the lanes (ALU/FPU ops, vmadc/vmsbc, masked FP compares): accept the lanes' ack
++  // for it even after the producing instruction has left the issue stage
++  logic  [MaskQueueDepth-1:0]              mask_queue_tolanes_d, mask_queue_tolanes_q;
+   // We need two pointers in the mask queue. One pointer to
+   // indicate with `strb_t` we are currently writing into (write_pnt),
+   // and one pointer to indicate which `strb_t` we are currently
+@@ -311,12 +314,14 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+     if (!rst_ni) begin
+       mask_queue_q           <= '0;
+       mask_queue_valid_q     <= '0;
++      mask_queue_tolanes_q   <= '0;
+       mask_queue_write_pnt_q <= '0;
+       mask_queue_read_pnt_q  <= '0;
+       mask_queue_cnt_q       <= '0;
+     end else begin
+       mask_queue_q           <= mask_queue_d;
+       mask_queue_valid_q     <= mask_queue_valid_d;
++      mask_queue_tolanes_q   <= mask_queue_tolanes_d;
+       mask_queue_write_pnt_q <= mask_queue_write_pnt_d;
+       mask_queue_read_pnt_q  <= mask_queue_read_pnt_d;
+       mask_queue_cnt_q       <= mask_queue_cnt_d;
+@@ -502,6 +507,11 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+ 
+   // Sequential indicator to track that end of the vcompress issue phase
+   logic vcompress_issue_end_d, vcompress_issue_end_q;
++  // Masked FP compares: the mask queue also feeds the lanes' FPU (so inactive elements raise no
++  // flags) from the same MaskM beat the compare processing uses: the fill must not pop the beat,
++  // and waits for the processing to pop it before filling from the next one
++  logic cmp_mask_lanes, cmp_beat_filled_d, cmp_beat_filled_q;
++  assign cmp_mask_lanes = vinsn_issue_valid && (vinsn_issue.op inside {[VMFEQ:VMFGE]}) && !vinsn_issue.vm;
+ 
+   // How many elements will the current vcompress write?
+   vlen_t vcompress_cnt_d, vcompress_cnt_q;
+@@ -906,6 +916,9 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+     vfirst_count_d    = vfirst_count_q;
+ 
+     mask_queue_d           = mask_queue_q;
++    mask_queue_tolanes_d   = mask_queue_tolanes_q;
++    // (before the mask-queue fill, which sets it)
++    cmp_beat_filled_d      = cmp_beat_filled_q;
+     mask_queue_valid_d     = mask_queue_valid_q;
+     mask_queue_write_pnt_d = mask_queue_write_pnt_q;
+     mask_queue_read_pnt_d  = mask_queue_read_pnt_q;
+@@ -970,10 +983,13 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+ 
+     // Is there space in the result queue?
+     if (!mask_queue_full) begin
++      // Element width of the lanes' operation: vtype.vsew of a compare is vd's (mask) EEW
++      automatic rvv_pkg::vew_e fill_sew = (vinsn_issue.op inside {[VMFEQ:VMFGE]}) ? vinsn_issue.eew_vs2
++                                                                                 : vinsn_issue.vtype.vsew;
+       // Copy data from the mask operands into the mask queue
+       for (int vrf_seq_byte = 0; vrf_seq_byte < NrLanes*StrbWidth; vrf_seq_byte++) begin
+         // Map vrf_seq_byte to the corresponding byte in the VRF word.
+-        automatic int vrf_byte = shuffle_index(vrf_seq_byte, NrLanes, vinsn_issue.vtype.vsew);
++        automatic int vrf_byte = shuffle_index(vrf_seq_byte, NrLanes, fill_sew);
+ 
+         // At which lane, and what is the byte offset in that lane, of the byte vrf_byte?
+         // NOTE: This does not work if the number of lanes is not a power of two.
+@@ -986,7 +1002,7 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+         automatic int vrf_pnt_bit_offset  = mask_pnt_q[idx_width(StrbWidth)-1:0];
+ 
+         // A single bit from the mask operands can be used several times, depending on the eew.
+-        automatic int mask_seq_bit  = vrf_seq_byte >> int'(vinsn_issue.vtype.vsew);
++        automatic int mask_seq_bit  = vrf_seq_byte >> int'(fill_sew);
+         automatic int mask_seq_byte = (mask_seq_bit >> $clog2(StrbWidth)) + vrf_pnt_byte_offset;
+         // Shuffle this source byte
+         automatic int mask_byte     = shuffle_index(mask_seq_byte, NrLanes, vinsn_issue.eew_vmask);
+@@ -1005,12 +1021,15 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+       end
+ 
+       // Is there an instruction ready to be issued?
+-      if (vinsn_issue_valid && ((vinsn_issue.vfu != VFU_MaskUnit) || (vinsn_issue.op inside {[VMADC:VMSBC]}))) begin
++      if (vinsn_issue_valid && ((vinsn_issue.vfu != VFU_MaskUnit) || (vinsn_issue.op inside {[VMADC:VMSBC]}) ||
++                                (cmp_mask_lanes && !cmp_beat_filled_q))) begin
+         // Is there place in the mask queue to write the mask operands?
+         // Did we receive the mask bits on the MaskM channel?
+-        if (!vinsn_issue.vm && &masku_operand_m_valid) begin
++        // read_cnt_q == 0: every mask word of this instruction is already queued (a compare does not
++        // pop the MaskM beat when its fill ends, so the beat stays valid: do not queue extra words)
++        if (!vinsn_issue.vm && &masku_operand_m_valid && (read_cnt_q != '0)) begin
+           // Account for the used operands
+-          mask_pnt_d += NrLanes * (1 << (int'(EW64) - vinsn_issue.vtype.vsew));
++          mask_pnt_d += NrLanes * (1 << (int'(EW64) - fill_sew));
+ 
+           // Increment result queue pointers and counters
+           mask_queue_cnt_d += 1;
+@@ -1020,22 +1039,26 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+             mask_queue_write_pnt_d = mask_queue_write_pnt_q + 1;
+ 
+           // Account for the operands that were issued
+-          read_cnt_d = read_cnt_q - NrLanes * (1 << (int'(EW64) - vinsn_issue.vtype.vsew));
+-          if (read_cnt_q < NrLanes * (1 << (int'(EW64) - vinsn_issue.vtype.vsew)))
++          read_cnt_d = read_cnt_q - NrLanes * (1 << (int'(EW64) - fill_sew));
++          if (read_cnt_q < NrLanes * (1 << (int'(EW64) - fill_sew)))
+             read_cnt_d = '0;
+ 
+           // Trigger the request signal
+           mask_queue_valid_d[mask_queue_write_pnt_q] = {NrLanes{1'b1}};
++          mask_queue_tolanes_d[mask_queue_write_pnt_q] = (vinsn_issue.vfu inside {VFU_Alu, VFU_MFpu}) ||
++                                                         (vinsn_issue.op inside {[VMADC:VMSBC], [VMFEQ:VMFGE]});
+ 
+           // Are there lanes with no valid elements?
+-          // If so, mute their request signal
+-          if (read_cnt_q < NrLanes)
++          // If so, mute their request signal. Not for FP compares: their lanes compute a balanced
++          // payload for the MASKU (every lane gets at least one element) and wait for its mask.
++          if (read_cnt_q < NrLanes && !(vinsn_issue.op inside {[VMFEQ:VMFGE]}))
+             mask_queue_valid_d[mask_queue_write_pnt_q] = (1 << read_cnt_q) - 1;
+ 
+           // Consumed all valid bytes from the lane operands
+           if (mask_pnt_d == NrLanes*DataWidth || read_cnt_d == '0) begin
+-            // Request another beat
+-            masku_operand_m_ready = '1;
++            // Request another beat (a compare's processing pops it later)
++            if (cmp_mask_lanes) cmp_beat_filled_d = 1'b1;
++            else masku_operand_m_ready = '1;
+             // Reset the pointer
+             mask_pnt_d = '0;
+           end
+@@ -1051,7 +1074,7 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+       // The VLDU and the VSTU acknowledge all the operands at once.
+       // Only accept the acknowledgement from the lanes if the current instruction is executing there.
+       // Deactivate the request, but do not bump the pointers for now.
+-      if ((lane_mask_ready_i[lane] && mask_valid_o[lane] && (vinsn_issue.vfu inside {VFU_Alu, VFU_MFpu} || vinsn_issue.op inside {[VMADC:VMSBC]})) ||
++      if ((lane_mask_ready_i[lane] && mask_valid_o[lane] && mask_queue_tolanes_q[mask_queue_read_pnt_q]) ||
+            vldu_mask_ready_i || vstu_mask_ready_i || sldu_mask_ready_i) begin
+         mask_queue_valid_d[mask_queue_read_pnt_q][lane] = 1'b0;
+         mask_queue_d[mask_queue_read_pnt_q][lane]       = '0;
+@@ -1316,6 +1339,8 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+           in_m_ready_cnt_clr = 1'b1;
+           if (!vinsn_issue.vm) begin
+             masku_operand_m_ready = '1;
++            // The lanes' mask fill may move on to the next beat
++            cmp_beat_filled_d     = 1'b0;
+           end
+         end
+ 
+@@ -1657,6 +1682,7 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+       vrgat_req_valid_mask_q  <= '0;
+       vrgat_cnt_q             <= '0;
+       vcompress_issue_end_q   <= '0;
++      cmp_beat_filled_q       <= '0;
+       vcompress_cnt_q         <= '0;
+     end else begin
+       vinsn_running_q         <= vinsn_running_d;
+@@ -1681,6 +1707,7 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+       vrgat_req_valid_mask_q  <= vrgat_req_valid_mask_d;
+       vrgat_cnt_q             <= vrgat_cnt_d;
+       vcompress_issue_end_q   <= vcompress_issue_end_d;
++      cmp_beat_filled_q       <= cmp_beat_filled_d;
+       vcompress_cnt_q         <= vcompress_cnt_d;
+     end
+   end

@@ -1,0 +1,15 @@
+diff --git a/hardware/src/ara_dispatcher.sv b/hardware/src/ara_dispatcher.sv
+index e5f9e06..ea7f014 100644
+--- a/hardware/src/ara_dispatcher.sv
++++ b/hardware/src/ara_dispatcher.sv
+@@ -3699,7 +3699,9 @@ module ara_dispatcher import ara_pkg::*; import rvv_pkg::*; #(
+ 
+     // Update the EEW
+     if (ara_req_valid_d && ara_req.use_vd && ara_req_ready_i) begin
+-      unique case (ara_req.emul)
++      // Reductions and scalar moves write vd[0] only, whatever the (widened) EMUL: tagging the
++      // following registers would relabel data they still hold in another layout
++      unique case ((ara_req.op inside {[VMVSX:VWREDSUM], [VFREDUSUM:VFWREDOSUM]}) ? LMUL_1 : ara_req.emul)
+         LMUL_1: begin
+           for (int i = 0; i < 1; i++) begin
+             eew_d[ara_req.vd + i]       = ara_req.vtype.vsew;

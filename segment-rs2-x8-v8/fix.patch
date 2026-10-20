@@ -1,0 +1,28 @@
+diff --git a/hardware/src/ara_dispatcher.sv b/hardware/src/ara_dispatcher.sv
+index e5f9e06..db2e9bb 100644
+--- a/hardware/src/ara_dispatcher.sv
++++ b/hardware/src/ara_dispatcher.sv
+@@ -3030,8 +3030,9 @@ module ara_dispatcher import ara_pkg::*; import rvv_pkg::*; #(
+               default:;
+             endcase
+ 
+-            // Check for segment loads
+-            if (ara_req.nf != 3'b000 && insn.vmem_type.rs2 != 5'b01000) begin
++            // Check for segment loads. Only the unit-stride form uses rs2 = 5'b01000 for the whole
++            // registers variant: for strided and indexed accesses, rs2 is the stride/index register.
++            if (ara_req.nf != 3'b000 && !(ara_req.op == VLE && insn.vmem_type.rs2 == 5'b01000)) begin
+               if (pending_seg_mem_op_q) begin
+                 // This is a segment load instruction
+                 is_segment_mem_op = 1'b1;
+@@ -3274,8 +3275,9 @@ module ara_dispatcher import ara_pkg::*; import rvv_pkg::*; #(
+               default:;
+             endcase
+ 
+-            // Check for segment stores
+-            if (ara_req.nf != 3'b000 && insn.vmem_type.rs2 != 5'b01000) begin
++            // Check for segment stores. Only the unit-stride form uses rs2 = 5'b01000 for the whole
++            // registers variant: for strided and indexed accesses, rs2 is the stride/index register.
++            if (ara_req.nf != 3'b000 && !(ara_req.op == VSE && insn.vmem_type.rs2 == 5'b01000)) begin
+               if (pending_seg_mem_op_q) begin
+                 // This is a segment store instruction
+                 is_segment_mem_op = 1'b1;

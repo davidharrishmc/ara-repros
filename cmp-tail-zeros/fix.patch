@@ -1,0 +1,54 @@
+diff --git a/hardware/src/masku/masku.sv b/hardware/src/masku/masku.sv
+index d2fdccd..5fac905 100644
+--- a/hardware/src/masku/masku.sv
++++ b/hardware/src/masku/masku.sv
+@@ -227,6 +227,8 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+   // vmsbf, vmsif, vmsof, viota, vid, vcpop, vfirst variables
+   logic  [NrLanes*DataWidth-1:0] masku_operand_alu_seq_m;
+   logic  [NrLanes*DataWidth-1:0] alu_result_vm, alu_result_vm_m, alu_result_vm_shuf;
++  // Comparison / vmadc / vmsbc result bits at or past vl in the current VRF word
++  logic  [NrLanes*DataWidth-1:0] cmp_tail_ones;
+   logic                          found_one, found_one_d, found_one_q;
+ 
+   // How many elements we are processing per cycle
+@@ -706,6 +708,11 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+ 
+     be_vrgat_seq_d = be_vrgat_seq_q;
+ 
++    // vrf_pnt_q counts the elements processed since the start of the instruction; bit k of the
++    // current VRF word is a tail element if it lies at or past vl
++    for (int k = 0; k < NrLanes*DataWidth; k++)
++      cmp_tail_ones[k] = (vlen_t'(k) >= vlen_t'(vrf_pnt_q % (NrLanes*DataWidth)) + issue_cnt_q);
++
+     if (vinsn_issue_valid) begin
+       // Evaluate the instruction
+       unique case (vinsn_issue.op) inside
+@@ -715,10 +722,12 @@ module masku import ara_pkg::*; import rvv_pkg::*; #(
+         // This operation can overwrite the destination register without constraints on tail elements
+         [VMANDNOT:VMXNOR]: alu_result_vm_m = masku_operand_alu_seq;
+         // Comparisons: mask out the masked out bits of this pre-computed slice
+-        [VMFEQ:VMSGT]: alu_result_vm_m = alu_result_compressed_seq
++        // Bits at or past vl are tail: the lanes compute them from operands they never fetched,
++        // so force them to 1 and let the background data show through.
++        [VMFEQ:VMSGT]: alu_result_vm_m = alu_result_compressed_seq | cmp_tail_ones
+                                   | ~(masku_operand_m_seq | {NrLanes*DataWidth{vinsn_issue.vm}});
+         // Add/sub-with-carry/borrow: the masks are all 1 since these operations are NOT masked
+-        [VMADC:VMSBC]: alu_result_vm_m = alu_result_compressed_seq;
++        [VMADC:VMSBC]: alu_result_vm_m = alu_result_compressed_seq | cmp_tail_ones;
+         // VMSBF, VMSOF, VMSIF: compute a slice of the output and mask out the masked out bits
+         [VMSBF:VMSIF] : begin
+           vmsbf_buffer[0] = ~(masku_operand_alu_seq_m[in_ready_cnt_q[idx_width(NrLanes*DataWidth/VmsxfParallelism)-1:0] * VmsxfParallelism] | found_one_q);
+diff --git a/hardware/src/masku/masku_operands.sv b/hardware/src/masku/masku_operands.sv
+index 2788652..bd33d5e 100644
+--- a/hardware/src/masku/masku_operands.sv
++++ b/hardware/src/masku/masku_operands.sv
+@@ -228,7 +228,8 @@ module masku_operands import ara_pkg::*; import rvv_pkg::*; #(
+         automatic int src_byte_lane   = src_byte[idx_width(ELENB) +: idx_width(NrLanes)];
+         automatic int src_byte_offset = src_byte[idx_width(ELENB)-1:0];
+ 
+-        automatic int dest_bit_seq  = (b >> vinsn_issue_i.eew_vs2) + vrf_pnt_i;
++        // Bit within the current VRF word (vrf_pnt_i counts from the start of the instruction)
++        automatic int dest_bit_seq  = ((b >> vinsn_issue_i.eew_vs2) + vrf_pnt_i) % (ELENB * NrLanes * 8);
+         automatic int dest_byte_seq = dest_bit_seq / ELENB;
+         alu_result_compressed_seq_o[ELENB * dest_byte_seq + dest_bit_seq[idx_width(ELENB)-1:0]] = masku_operand_alu_o[src_byte_lane][8 * src_byte_offset];
+       end

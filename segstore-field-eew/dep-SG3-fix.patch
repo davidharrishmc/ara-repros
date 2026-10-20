@@ -1,0 +1,84 @@
+diff --git a/hardware/src/segment_sequencer.sv b/hardware/src/segment_sequencer.sv
+index afca58e..73599cc 100644
+--- a/hardware/src/segment_sequencer.sv
++++ b/hardware/src/segment_sequencer.sv
+@@ -136,45 +136,50 @@ module segment_sequencer import ara_pkg::*; import rvv_pkg::*; #(
+           is_vload_d = is_vload_i;
+           // Send a first micro operation upon valid segment mem op
+           if (is_segment_mem_op_i && !illegal_insn_i) begin
+-            // If we are here, the backend is able to accept the request
+-            // Set-up sequencing
+-            new_seg_mem_op = 1'b1;
+             // Set up the first micro operation
+             ara_req_o.vl = 1;
+-            // Pass to the next field if the previous micro op finished
+-            segment_cnt_en = 1'b1;
+-            // Start sequencing
+-            state_d    = SEGMENT_MICRO_OPS;
++            // Start sequencing only once the backend takes the first micro operation. The
++            // dispatcher can present the segment operation while it injects a reshuffle first,
++            // and that reshuffle must not be counted or rewritten as a micro operation.
++            if (ara_req_valid_i && ara_req_ready_i) begin
++              new_seg_mem_op = 1'b1;
++              segment_cnt_en = 1'b1;
++              state_d        = SEGMENT_MICRO_OPS;
++            end
+           end
+         end
+         SEGMENT_MICRO_OPS: begin
+-          // Manipulate the memory micro request in advance
+-          ara_req_o.vl        = next_vstart_cnt;
+-          ara_req_o.vstart    = vstart_cnt_q;
+-          ara_req_o.vs1       = ara_req_i.vs1 + segment_cnt_q;
+-          ara_req_o.vd        = ara_req_i.vd  + segment_cnt_q;
+-
+-          ara_req_o.scalar_op = is_vload_q           // todo: relax timing here
+-                              ? ara_req_i.scalar_op + (segment_cnt_q << ara_req_i.vtype.vsew)
+-                              : ara_req_i.scalar_op + (segment_cnt_q << ara_req_i.eew_vs1);
+-          // If segment unit-stride, the segments are actually separated by (#field << eew) bytes
+-          if (ara_req_i.op == VLE || ara_req_i.op == VSE) begin
+-            ara_req_o.op = is_vload_q
+-                         ? VLSE
+-                         : VSSE;
+-            ara_req_o.stride = is_vload_q
+-                             ? (ara_req_i.nf + 1) << ara_req_i.vtype.vsew
+-                             : (ara_req_i.nf + 1) << ara_req_i.eew_vs1;
++          // Only the segment operation itself is split into micro operations: reshuffles that
++          // the dispatcher injects in between pass through unchanged and are not counted
++          if (is_segment_mem_op_i) begin
++            // Manipulate the memory micro request in advance
++            ara_req_o.vl        = next_vstart_cnt;
++            ara_req_o.vstart    = vstart_cnt_q;
++            ara_req_o.vs1       = ara_req_i.vs1 + segment_cnt_q;
++            ara_req_o.vd        = ara_req_i.vd  + segment_cnt_q;
++
++            ara_req_o.scalar_op = is_vload_q           // todo: relax timing here
++                                ? ara_req_i.scalar_op + (segment_cnt_q << ara_req_i.vtype.vsew)
++                                : ara_req_i.scalar_op + (segment_cnt_q << ara_req_i.eew_vs1);
++            // If segment unit-stride, the segments are actually separated by (#field << eew) bytes
++            if (ara_req_i.op == VLE || ara_req_i.op == VSE) begin
++              ara_req_o.op = is_vload_q
++                           ? VLSE
++                           : VSSE;
++              ara_req_o.stride = is_vload_q
++                               ? (ara_req_i.nf + 1) << ara_req_i.vtype.vsew
++                               : (ara_req_i.nf + 1) << ara_req_i.eew_vs1;
++            end
++
++            // Pass to the next field if the previous micro op finished
++            if (ara_req_valid_i && ara_req_ready_i) begin
++              segment_cnt_en = 1'b1;
++            end
+           end
+ 
+           // Don't answer CVA6 yet
+           ara_resp_valid_o = 1'b0;
+ 
+-          // Pass to the next field if the previous micro op finished
+-          if (ara_req_valid_i && ara_req_ready_i) begin
+-            segment_cnt_en = 1'b1;
+-          end
+-
+           // Wait for an answer from Ara's backend
+           if (ara_resp_valid_i) begin            // If exception, stop the execution
+             if (ara_resp_i.exception.valid) begin

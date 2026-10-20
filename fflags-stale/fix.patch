@@ -1,0 +1,37 @@
+diff --git a/hardware/include/ara/intf_typedef.svh b/hardware/include/ara/intf_typedef.svh
+index f572280..3acd8e1 100644
+--- a/hardware/include/ara/intf_typedef.svh
++++ b/hardware/include/ara/intf_typedef.svh
+@@ -33,6 +33,7 @@
+     logic                              load_complete;                        \
+     logic [4:0]                        fflags;                               \
+     logic                              fflags_valid;                         \
++    logic                              fflags_pending;                       \
+     logic                              inval_valid;                          \
+     logic [63:0]                       inval_addr;                           \
+   } accelerator_resp_t;
+diff --git a/hardware/src/ara_dispatcher.sv b/hardware/src/ara_dispatcher.sv
+index e5f9e06..e56bb3d 100644
+--- a/hardware/src/ara_dispatcher.sv
++++ b/hardware/src/ara_dispatcher.sv
+@@ -265,6 +265,10 @@ module ara_dispatcher import ara_pkg::*; import rvv_pkg::*; #(
+   `FF(load_complete_q, load_complete || illegal_insn_load, 1'b0)
+   `FF(store_complete_q, store_complete || illegal_insn_store, 1'b0)
+ 
++  // Vector FP instructions in flight may still raise fflags after CVA6 committed them
++  logic fflags_pending_q;
++  `FF(fflags_pending_q, !ara_idle_i, 1'b0)
++
+   // NP2 Slide support
+   logic is_stride_np2;
+   logic [idx_width(idx_width(VLENB << 3)):0] sldu_popc;
+@@ -425,6 +429,9 @@ module ara_dispatcher import ara_pkg::*; import rvv_pkg::*; #(
+       store_complete: store_zero_vl | store_complete_q,
+       store_pending : store_pending_i,
+       fflags_valid  : |fflags_ex_valid_i,
++      // CVA6 holds fflags/fcsr CSR accesses while this is set (one more cycle after Ara is idle,
++      // for the last fflags_valid to reach fcsr)
++      fflags_pending: !ara_idle_i || fflags_pending_q,
+       default       : '0
+     };
+     acc_resp_o.req_ready  = 1'b0;

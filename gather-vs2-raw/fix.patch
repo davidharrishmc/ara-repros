@@ -1,0 +1,16 @@
+diff --git a/hardware/src/ara_sequencer.sv b/hardware/src/ara_sequencer.sv
+index 9cd0cc4..7bdf52c 100644
+--- a/hardware/src/ara_sequencer.sv
++++ b/hardware/src/ara_sequencer.sv
+@@ -483,7 +483,10 @@ module ara_sequencer import ara_pkg::*; import rvv_pkg::*; import cf_math_pkg::i
+             if (!(|{ara_req_i.use_vs1, ara_req_i.use_vs2, ara_req_i.use_vd_op, !ara_req_i.vm}) &&
+                 |{pe_req_d.hazard_vs1, pe_req_d.hazard_vs2, pe_req_d.hazard_vm, pe_req_d.hazard_vd} ||
+                 (pe_req_d.op == VSLIDEUP && |{pe_req_d.hazard_vd, pe_req_d.hazard_vs1, pe_req_d.hazard_vs2}) ||
+-                (pe_req_d.op == VSLIDEDOWN && |{pe_req_d.hazard_vs1, pe_req_d.hazard_vs2}))
++                (pe_req_d.op == VSLIDEDOWN && |{pe_req_d.hazard_vs1, pe_req_d.hazard_vs2}) ||
++                // VRGATHER/VCOMPRESS read vs2 through ad-hoc single-element MaskB requests that carry no
++                // hazard information, so they could read vs2 before its producer wrote it: wait until it is done
++                (pe_req_d.op inside {[VRGATHER:VCOMPRESS]} && pe_req_d.hazard_vs2 != '0))
+             begin
+               ara_req_ready_o = 1'b0;
+               pe_req_valid_d  = 1'b0;

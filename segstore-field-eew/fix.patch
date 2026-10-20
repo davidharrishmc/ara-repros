@@ -1,0 +1,51 @@
+diff --git a/hardware/src/ara_dispatcher.sv b/hardware/src/ara_dispatcher.sv
+index e5f9e06..32f3dd1 100644
+--- a/hardware/src/ara_dispatcher.sv
++++ b/hardware/src/ara_dispatcher.sv
+@@ -257,6 +257,9 @@ module ara_dispatcher import ara_pkg::*; import rvv_pkg::*; #(
+   logic null_vslideup;
+   // Does the selected reg group for the selected EMUL have same EEW encoding?
+   logic is_same_eew;
++  // Segment store: number of field registers, and does any of them hold another EEW?
++  logic [3:0] seg_st_regs;
++  logic       seg_st_mm;
+ 
+   // Pipeline the VLSU's load and store complete signals, for timing reasons
+   logic load_complete, load_complete_q;
+@@ -418,6 +421,8 @@ module ara_dispatcher import ara_pkg::*; import rvv_pkg::*; #(
+     in_lane_op      = 1'b0;
+ 
+     is_segment_mem_op = 1'b0;
++    seg_st_regs       = '0;
++    seg_st_mm         = 1'b0;
+ 
+     acc_resp_o       = '{
+       trans_id      : acc_req_i.trans_id,
+@@ -3641,6 +3646,15 @@ module ara_dispatcher import ara_pkg::*; import rvv_pkg::*; #(
+         reshuffle_req_d = {ara_req.use_vs1 && (ara_req.eew_vs1    != eew_q[ara_req.vs1]) && eew_valid_q[ara_req.vs1] && (in_lane_op || (is_vstore && ((csr_vstart_q != '0) || !is_same_eew))),
+                            ara_req.use_vs2 && (ara_req.eew_vs2    != eew_q[ara_req.vs2]) && eew_valid_q[ara_req.vs2] && in_lane_op,
+                            ara_req.use_vd  && (ara_req.vtype.vsew != eew_q[ara_req.vd ]) && eew_valid_q[ara_req.vd ] && !(csr_vstart_q == 0 && (csr_vl_q == ((VLENB << ara_req.emul[1:0]) >> ara_req.vtype.vsew)))};
++        // A segment store reads (nf+1) fields of EMUL registers with one source EEW (that of vs3):
++        // convert every field register that holds another EEW, not only the first one
++        seg_st_regs = (ara_req.emul[2] ? 4'd1 : (4'd1 << ara_req.emul[1:0])) * (4'(ara_req.nf) + 4'd1);
++        seg_st_mm   = 1'b0;
++        if (is_vstore && is_segment_mem_op)
++          for (int unsigned r = 0; r < 8; r++)
++            if (r < seg_st_regs && eew_valid_q[5'(ara_req.vs1 + r)] && (eew_q[5'(ara_req.vs1 + r)] != ara_req.eew_vs1))
++              seg_st_mm = 1'b1;
++        if (seg_st_mm) reshuffle_req_d[2] = 1'b1;
+         // Mask out requests if they refer to the same register!
+         reshuffle_req_d &= {
+           (insn.varith_type.rs1 != insn.varith_type.rs2) && (insn.varith_type.rs1 != insn.varith_type.rd),
+@@ -3686,6 +3700,11 @@ module ara_dispatcher import ara_pkg::*; import rvv_pkg::*; #(
+           LMUL_8:  rs_lmul_cnt_limit_d = 7;
+           default: rs_lmul_cnt_limit_d = 0;
+         endcase
++        // Segment store: walk all its field registers, skipping vs3 itself if it already matches
++        if (seg_st_mm) begin
++          rs_lmul_cnt_limit_d = 3'(seg_st_regs - 4'd1);
++          if (eew_old_buffer_d == eew_new_buffer_d) rs_mask_request_d = 1'b1;
++        end
+ 
+         // Save info for next reshuffles
+         reshuffle_eew_vs1_d = ara_req.eew_vs1;

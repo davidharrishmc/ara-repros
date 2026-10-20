@@ -1,0 +1,5 @@
+# Strided segment accesses with the stride in x8 and indexed segment accesses with the index in v8 access only field 0
+
+Issue: (pending)
+
+Build with `make` (riscv64-unknown-elf-gcc); run with `make run-spike` and `make ARA_SIM=<path>/Vara_tb_verilator run-ara`. `spike.txt` and `ara-main.txt` are the outputs of Spike and of Ara main 34bd3bc (`nr_lanes=4 vlen=512`); `ara-main-fix.txt`, where present, is Ara main with `fix.patch`.

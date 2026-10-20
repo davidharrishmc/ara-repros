@@ -1,0 +1,46 @@
+diff --git a/hardware/include/ara_pkg.sv b/hardware/include/ara_pkg.sv
+index 3b269e7..40871ab 100644
+--- a/hardware/include/ara_pkg.sv
++++ b/hardware/include/ara_pkg.sv
+@@ -297,10 +297,11 @@ typedef struct packed {
+       default: fp16.e = 5'd8 + fp8.e; // Normal
+     endcase
+     // Wide mantissa
+-    // If the input is NaN, output a quiet NaN mantissa.
++    // A NaN keeps its payload, so that a signaling NaN stays signaling and the FPU raises NV on it
++    // (its result is the canonical NaN anyway).
+     // Otherwise, append trailing zeros to the mantissa.
+     fp8_temp.m = ((fp8.e == '0) && (fp8.m != '0)) ? (fp8.m << 1) << fp8_m_lzc : fp8.m;
+-    fp16.m = ((fp8.e == '1) && (fp8.m != '0) ) ? {1'b1, 9'b0} : {fp8_temp.m, 8'b0};
++    fp16.m = {fp8_temp.m, 8'b0};
+     fp16_from_fp8 = fp16;
+   endfunction
+ 
+@@ -320,10 +321,11 @@ typedef struct packed {
+     endcase
+ 
+     // Wide mantissa
+-    // If the input is NaN, output a quiet NaN mantissa.
++    // A NaN keeps its payload, so that a signaling NaN stays signaling and the FPU raises NV on it
++    // (its result is the canonical NaN anyway).
+     // Otherwise, append trailing zeros to the mantissa.
+     fp16_temp.m = ((fp16.e == '0) && (fp16.m != '0)) ? (fp16.m << 1) << fp16_m_lzc : fp16.m;
+-    fp32.m = ((fp16.e == '1) && (fp16.m != '0) ) ? {1'b1, 22'b0} : {fp16_temp.m, 13'b0};
++    fp32.m = {fp16_temp.m, 13'b0};
+ 
+     fp32_from_fp16 = fp32;
+   endfunction
+@@ -344,10 +346,11 @@ typedef struct packed {
+     endcase
+ 
+     // Wide mantissa
+-    // If the input is NaN, output a quiet NaN mantissa.
++    // A NaN keeps its payload, so that a signaling NaN stays signaling and the FPU raises NV on it
++    // (its result is the canonical NaN anyway).
+     // Otherwise, append trailing zeros to the mantissa.
+     fp32_temp.m = ((fp32.e == '0) && (fp32.m != '0)) ? (fp32.m << 1) << fp32_m_lzc : fp32.m;
+-    fp64.m = ((fp32.e == '1) && (fp32.m != '0)) ? {1'b1, 51'b0} : {fp32_temp.m, 29'b0};
++    fp64.m = {fp32_temp.m, 29'b0};
+ 
+     fp64_from_fp32 = fp64;
+   endfunction
