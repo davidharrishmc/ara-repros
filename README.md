@@ -1,6 +1,6 @@
 # Ara reproducers
 
-Standalone reproducers for [pulp-platform/ara](https://github.com/pulp-platform/ara) issues, one directory
+Standalone reproducers for [pulp-platform/ara](https://github.com/pulp-platform/ara) issues (and one CVA6 + Ara issue), one directory
 per issue. Each directory has the probe body (`repro.S`), the shared harness (`harness.S`, `link.ld`,
 `data.inc`) and a `Makefile`, prebuilt ELFs for the Ara testbench (`repro.elf`) and for Spike
 (`repro-spike.elf`), the outputs of Spike (`spike.txt`) and of Ara main 34bd3bc with `nr_lanes=4 vlen=512`
@@ -36,3 +36,10 @@ after the trapping instruction.
 | [sldu-tail-byte-enable](sldu-tail-byte-enable/) | [pulp-platform/ara#497](https://github.com/pulp-platform/ara/issues/497) |
 | [vslideup-early-completion](vslideup-early-completion/) | [pulp-platform/ara#497](https://github.com/pulp-platform/ara/issues/497) |
 | [shift-imm-e64](shift-imm-e64/) | [pulp-platform/ara#519](https://github.com/pulp-platform/ara/issues/519) |
+| [vill-unit-stride](vill-unit-stride/) | [pulp-platform/ara#546](https://github.com/pulp-platform/ara/issues/546) |
+| [vstart-width](vstart-width/) | [pulp-platform/ara#547](https://github.com/pulp-platform/ara/issues/547) |
+| [wholereg-fault-vstart](wholereg-fault-vstart/) | [pulp-platform/ara#548](https://github.com/pulp-platform/ara/issues/548) |
+| [vstart-prestart-overwrite](vstart-prestart-overwrite/) | [pulp-platform/ara#549](https://github.com/pulp-platform/ara/issues/549) |
+| [masked-off-page-fault](masked-off-page-fault/) | [pulp-platform/ara#550](https://github.com/pulp-platform/ara/issues/550) |
+| [compare-tags-emul-group](compare-tags-emul-group/) | [pulp-platform/ara#532](https://github.com/pulp-platform/ara/issues/532) |
+| [fsoff-dirty](fsoff-dirty/) | [openhwfoundation/cva6#3725](https://github.com/openhwfoundation/cva6/issues/3725) |
